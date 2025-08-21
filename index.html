@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مخطط الوجبات الذكي</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8;
+        }
+        .container {
+            max-width: 960px;
+        }
+        .card {
+            background-color: #ffffff;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .btn {
+            transition: all 0.3s ease;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
+        }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body dir="rtl" class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+
+    <div id="app" class="container mx-auto p-8 bg-gray-50 rounded-lg shadow-xl card">
+        <h1 class="text-4xl font-bold text-center mb-6 text-gray-800">مخطط وجبات الطعام</h1>
+        <p class="text-center text-gray-600 mb-8">
+            أضف المكونات المتاحة لديك واحصل على وصفات شهية!
+        </p>
+
+        <!-- قسم إضافة المكونات -->
+        <div class="mb-8 p-6 card">
+            <h2 class="text-2xl font-semibold mb-4 text-gray-700">أضف مكوناتك</h2>
+            <div class="flex items-center mb-4">
+                <input id="ingredient-input" type="text" placeholder="اكتب مكونًا هنا..." class="flex-grow p-3 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-800">
+                <button id="add-btn" class="bg-blue-600 text-white p-3 rounded-r-lg hover:bg-blue-700 btn transition-colors duration-200">
+                    <i class="fas fa-plus"></i>
+                </button>
+            </div>
+            <div id="ingredients-list" class="flex flex-wrap gap-2">
+                <!-- المكونات المضافة ستظهر هنا -->
+            </div>
+        </div>
+
+        <!-- زر توليد الوصفة -->
+        <div class="text-center mb-8">
+            <button id="generate-recipe-btn" class="bg-gradient-to-r from-green-500 to-teal-500 text-white font-bold py-4 px-8 rounded-full shadow-lg hover:shadow-xl transform hover:scale-105 btn transition-all duration-300">
+                <span class="mr-2">✨</span> توليد وصفة بفضل Gemini
+            </button>
+        </div>
+
+        <!-- قسم عرض الوصفة -->
+        <div id="recipe-section" class="hidden p-6 card">
+            <div class="flex items-center justify-center mb-4">
+                <h2 class="text-2xl font-semibold text-gray-700 mr-4">الوصفة المقترحة</h2>
+                <div id="loading-spinner" class="loader hidden"></div>
+            </div>
+            <div id="recipe-title" class="text-xl font-bold text-gray-800 mb-4 text-center"></div>
+            <div id="recipe-content" class="prose max-w-none text-gray-700 leading-relaxed">
+                <!-- الوصفة المولدة ستظهر هنا -->
+            </div>
+        </div>
+        
+        <!-- قسم الخطأ -->
+        <div id="error-message" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+          <strong class="font-bold">عذراً!</strong>
+          <span class="block sm:inline" id="error-text">حدث خطأ ما. يرجى المحاولة مرة أخرى.</span>
+        </div>
+
+        <!-- قسم توضيحي للاستخدام -->
+        <div class="text-center mt-8 text-sm text-gray-500">
+            <p>تم تطوير هذا التطبيق باستخدام واجهة برمجة تطبيقات Gemini للذكاء الاصطناعي.</p>
+        </div>
+    </div>
+
+    <script>
+        // دالة لإظهار رسالة الخطأ
+        function showErrorMessage(message) {
+            const errorDiv = document.getElementById('error-message');
+            const errorText = document.getElementById('error-text');
+            errorText.textContent = message;
+            errorDiv.classList.remove('hidden');
+        }
+
+        // دالة لإخفاء رسالة الخطأ
+        function hideErrorMessage() {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.classList.add('hidden');
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const ingredientInput = document.getElementById('ingredient-input');
+            const addBtn = document.getElementById('add-btn');
+            const ingredientsList = document.getElementById('ingredients-list');
+            const generateRecipeBtn = document.getElementById('generate-recipe-btn');
+            const recipeSection = document.getElementById('recipe-section');
+            const recipeTitle = document.getElementById('recipe-title');
+            const recipeContent = document.getElementById('recipe-content');
+            const loadingSpinner = document.getElementById('loading-spinner');
+
+            let ingredients = [];
+
+            // دالة لإضافة مكون
+            function addIngredient() {
+                const ingredient = ingredientInput.value.trim();
+                if (ingredient && !ingredients.includes(ingredient)) {
+                    ingredients.push(ingredient);
+                    renderIngredients();
+                    ingredientInput.value = '';
+                }
+            }
+
+            // دالة لعرض المكونات
+            function renderIngredients() {
+                ingredientsList.innerHTML = '';
+                ingredients.forEach((ing, index) => {
+                    const pill = document.createElement('div');
+                    pill.className = 'bg-blue-500 text-white text-sm font-semibold py-1 px-3 rounded-full flex items-center shadow-md';
+                    pill.innerHTML = `
+                        <span>${ing}</span>
+                        <button data-index="${index}" class="ml-2 text-white opacity-75 hover:opacity-100 transition-opacity duration-200">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    `;
+                    ingredientsList.appendChild(pill);
+                });
+            }
+
+            // دالة لحذف مكون
+            ingredientsList.addEventListener('click', (e) => {
+                if (e.target.closest('button')) {
+                    const index = e.target.closest('button').dataset.index;
+                    ingredients.splice(index, 1);
+                    renderIngredients();
+                }
+            });
+
+            // ربط زر الإضافة بحدث النقر
+            addBtn.addEventListener('click', addIngredient);
+
+            // ربط حقل الإدخال بحدث الضغط على Enter
+            ingredientInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    addIngredient();
+                }
+            });
+
+            // دالة لتوليد الوصفة باستخدام Gemini API
+            generateRecipeBtn.addEventListener('click', async () => {
+                hideErrorMessage();
+                if (ingredients.length === 0) {
+                    showErrorMessage('الرجاء إضافة مكون واحد على الأقل لتوليد وصفة.');
+                    return;
+                }
+
+                recipeSection.classList.add('hidden');
+                loadingSpinner.classList.remove('hidden');
+                generateRecipeBtn.disabled = true;
+                generateRecipeBtn.textContent = 'جاري التوليد...';
+
+                const prompt = `اكتب وصفة مفصلة باستخدام هذه المكونات: ${ingredients.join(', ')}. يجب أن تتضمن الوصفة عنوانًا، قائمة بالمكونات، وخطوات التحضير. إذا كانت المكونات غير كافية، اقترح وجبة بسيطة مناسبة.`
+
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=`;
+                let attempt = 0;
+                const maxAttempts = 3;
+
+                while (attempt < maxAttempts) {
+                    try {
+                        const payload = {
+                            contents: [{
+                                parts: [{ text: prompt }]
+                            }]
+                        };
+
+                        const response = await fetch(apiUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+
+                        const result = await response.json();
+
+                        if (result.candidates && result.candidates.length > 0 && result.candidates[0].content) {
+                            const text = result.candidates[0].content.parts[0].text;
+                            
+                            // تقسيم النص إلى عنوان ومحتوى
+                            const lines = text.split('\n');
+                            const title = lines[0].replace('**', '').replace('**', '').trim();
+                            const content = lines.slice(1).join('\n');
+
+                            recipeTitle.textContent = title;
+                            recipeContent.innerHTML = content.replace(/\n/g, '<br>');
+                            
+                            recipeSection.classList.remove('hidden');
+                            break; // الخروج من الحلقة عند النجاح
+                        } else {
+                            throw new Error('لم يتم العثور على وصفة مناسبة.');
+                        }
+                    } catch (error) {
+                        console.error('فشل في توليد الوصفة:', error);
+                        attempt++;
+                        if (attempt < maxAttempts) {
+                            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt))); // تراجع أسي
+                        } else {
+                            showErrorMessage('عذراً، لم نتمكن من توليد وصفة. يرجى المحاولة مرة أخرى لاحقاً.');
+                            break; // الخروج من الحلقة بعد تجاوز عدد المحاولات
+                        }
+                    } finally {
+                        loadingSpinner.classList.add('hidden');
+                        generateRecipeBtn.disabled = false;
+                        generateRecipeBtn.textContent = '✨ توليد وصفة بفضل Gemini';
+                    }
+                }
+            });
+        });
+    </script>
+
+</body>
+</html>
